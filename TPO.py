@@ -122,7 +122,7 @@ def find_best_configuration(p: Problema, shortest_dist, time_limit=30.0):
 
 def main():
     if len(sys.argv) != 2:
-        print(f"Uso: python {os.path.basename(__file__)} <archivo.txt>")
+        print("Fallo")
         sys.exit(1)
 
     nombre = sys.argv[1]
@@ -135,23 +135,18 @@ def main():
         if os.path.exists(posible):
             nombre = posible
 
-    print(f"Leyendo archivo: {nombre}")
     problema = leer_archivo(nombre)
     if problema is None:
-        print("Error: no se pudo leer el archivo o archivo no encontrado.")
+        print("Fallo")
         sys.exit(1)
 
     # 1) construir grafo euclidiano completo
     build_euclidean_graph(problema)
-    print("Grafo euclidiano completo generado.")
 
     # 2) Floyd–Warshall para distancias mínimas
-    print("Calculando distancias mínimas (Floyd–Warshall)...")
     shortest = floyd_warshall(problema)
-    print("Matriz de distancias mínimas calculada.")
 
     # 3) probar subconjuntos de hubs y simular reparto
-    print("Evaluando configuraciones de hubs (puede tardar)...")
     start_time = time.time()
     mejor_coste, mejor_subset, detalle, mejor_ruta = find_best_configuration(problema, shortest, time_limit=30.0)
     elapsed = time.time() - start_time
@@ -181,10 +176,7 @@ def main():
         f.write(f"COSTO_HUBS : {act_cost:.2f}\n")
         f.write(f"TIEMPO_EJECUCION : {elapsed:.6f} segundos\n")
 
-    print(f"Solución escrita en: {salida_path}")
-
-    # imprimir resumen (opcional)
-    imprimir_problema(problema)
+    print("Exito")
 
 if __name__ == "__main__":
     main()
