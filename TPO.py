@@ -51,61 +51,71 @@ def enumerate_hub_subsets(hubs, max_enumerate=1<<15):
             for comb in itertools.combinations(consider, r):
                 yield list(comb)
 
-def simulate_routes_cost(p: Problema, shortest_dist, active_hub_nodes, capacidad):
-    """Simula rutas del camión de forma greedy para servir todos los paquetes.
+def backtracking_route(p: Problema, shortest_dist, active_hub_nodes):
+    """Usa backtracking para encontrar la ruta óptima del camión.
     Retorna (distancia_total, ruta_lista)"""
     deposito = p.deposito_id
-    destinos = [paq.id_nodo_destino for paq in p.paquetes]
-    pendientes = list(destinos)
-    distancia_total = 0.0
-    # puntos de recarga permitidos
-    recargas = set(active_hub_nodes) | {deposito}
+    destinos = frozenset(paq.id_nodo_destino for paq in p.paquetes)
+    recargas = frozenset(active_hub_nodes) | {deposito}
+    capacidad = p.capacidad_camion
 
-    # función auxiliar para distancia entre dos nodos
-    def d(a,b): return shortest_dist[a][b]
+    best_cost = float('inf')
+    best_route = None
 
-    current_start = deposito
-    route = [deposito]
-    # mientras queden paquetes por entregar
-    while pendientes:
-        # cargar hasta capacidad: elegir por proximidad al punto de partida (greedy)
-        trip = []
-        carga = 0
-        remaining = pendientes[:]
-        # seleccionar destinos más cercanos a current_start hasta llenar
-        remaining.sort(key=lambda x: d(current_start, x))
-        while carga < capacidad and remaining:
-            node = remaining.pop(0)
-            trip.append(node)
-            pendientes.remove(node)
-            carga += 1
+    def backtrack(current_loc, delivered, rem_cap, cost_so_far, route_so_far):
+        nonlocal best_cost, best_route
 
-        # recorrer el trip en orden greedy (nearest neighbor)
-        pos = current_start
-        for dest in trip:
-            distancia_total += d(pos, dest)
-            route.append(dest)
-            pos = dest
-        # al terminar el trip, volver al punto de recarga más cercano (debe ser depósito o hub activo)
-        mejor_recarga = min(recargas, key=lambda r: d(pos, r))
-        distancia_total += d(pos, mejor_recarga)
-        # si la recarga es diferente del punto actual, anotar en la ruta
-        if route[-1] != mejor_recarga:
-            route.append(mejor_recarga)
-        current_start = mejor_recarga
+        if cost_so_far >= best_cost:
+            return
 
-    # asegurar que la ruta termine en el depósito
-    if route[-1] != deposito:
-        distancia_total += d(route[-1], deposito)
-        route.append(deposito)
+        if len(delivered) == len(destinos):
+            # Todos entregados, volver al depósito si no estamos ahí
+            if current_loc != deposito:
+                cost_to_depot = shortest_dist[current_loc][deposito]
+                total_cost = cost_so_far + cost_to_depot
+                if total_cost < best_cost:
+                    best_cost = total_cost
+                    best_route = route_so_far + [deposito]
+            else:
+                if cost_so_far < best_cost:
+                    best_cost = cost_so_far
+                    best_route = route_so_far[:]
+            return
 
-    return distancia_total, route
+        # Cota inferior: suma de distancias mínimas a destinos no entregados
+        undelivered = destinos - delivered
+        lower_bound = 0.0
+        for dest in undelivered:
+            min_d = min(shortest_dist[loc][dest] for loc in recargas | {current_loc})
+            lower_bound += min_d
+        if cost_so_far + lower_bound >= best_cost:
+            return
+
+        # Acciones: entregar a un destino no entregado si hay capacidad
+        if rem_cap > 0:
+            for dest in undelivered:
+                dist = shortest_dist[current_loc][dest]
+                new_cost = cost_so_far + dist
+                new_route = route_so_far + [dest]
+                backtrack(dest, delivered | {dest}, rem_cap - 1, new_cost, new_route)
+
+        # O recargar en un punto de recarga
+        for rec in recargas:
+            if rec == current_loc:
+                continue  # Ya estamos aquí, pero permitir recargar si capacidad < capacidad
+            dist = shortest_dist[current_loc][rec]
+            new_cost = cost_so_far + dist
+            new_route = route_so_far + [rec]
+            backtrack(rec, delivered, capacidad, new_cost, new_route)
+
+    backtrack(deposito, frozenset(), capacidad, 0.0, [deposito])
+    return best_cost, best_route
 
 def evaluate_hub_subset(p: Problema, shortest_dist, subset_hubs):
     """Calcula costo total para un subconjunto de hubs activos."""
     activation_cost = sum(h.costo_activacion for h in subset_hubs)
     active_nodes = [h.id_nodo for h in subset_hubs]
-    distancia, ruta = simulate_routes_cost(p, shortest_dist, active_nodes, p.capacidad_camion)
+    distancia, ruta = backtracking_route(p, shortest_dist, active_nodes)
     return distancia + activation_cost, distancia, activation_cost, ruta
 
 def find_best_configuration(p: Problema, shortest_dist, time_limit=30.0):
