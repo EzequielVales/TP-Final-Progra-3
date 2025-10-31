@@ -1,196 +1,257 @@
 #!/usr/bin/env python3
 import sys
-import os
-import math
 import itertools
 import time
-from lector import leer_archivo,Problema
 
-def construir_grafo_euclediano(p: Problema) -> None:
-    """Construye grafo completo con distancias euclidianas entre nodos."""
-    n = p.num_nodos
-    p.grafo_distancias = [[0.0]*n for _ in range(n)]
-    for i in range(n):
-        xi, yi = p.nodos[i].x, p.nodos[i].y
-        for j in range(i+1, n):
-            xj, yj = p.nodos[j].x, p.nodos[j].y
-            d = math.hypot(xi - xj, yi - yj)
-            p.grafo_distancias[i][j] = d
-            p.grafo_distancias[j][i] = d
 
-def floyd_warshall(p: Problema):
-    """Calcula y retorna la matriz de distancias mínimas entre todos los pares."""
-    n = p.num_nodos
-    # copia
-    dist = [fila[:] for fila in p.grafo_distancias]
-    for k in range(n):
-        dk = dist[k]
-        for i in range(n):
-            di = dist[i]
-            ik = di[k]
-            if ik == float('inf'):
-                continue
-            for j in range(n):
-                nd = ik + dk[j]
-                if nd < di[j]:
-                    di[j] = nd
-    return dist
+def eliminar_comentario(linea: str) -> str:
+    """Elimina comentarios y espacios innecesarios de una línea."""
+    return linea.split("//")[0].strip()
 
-def enumerar_subconjuntos_hubs(hubs):
-    """Generador de subconjuntos de hubs. Si hay muchos hubs aplica heurística."""
-    H = len(hubs)
-    if H <= 15:
-        # enumerar todos.
 
-        #yield crea una función generadora que, en lugar de detenerse al terminar (como return), 
-        # pausa su ejecución y guarda su estado. Cuando se vuelve a llamar, se reanuda desde donde se quedó, 
-        # permitiendo generar valores uno por uno bajo demanda, sin tener que almacenar todos en memoria a la vez. 
-        for mask in range(1<<H):
-            yield [hubs[i] for i in range(H) if (mask>>i)&1]
-    else:
-        # heurística: tomar los hubs más baratos y generar combinaciones pequeñas
-        hubs_ordenados = sorted(hubs, key=lambda h: h.costo_activacion)
-        considerar = hubs_ordenados[:min(12, H)]
-        for r in range(0, 5):  # combinaciones de tamaño 0..4
-            for comb in itertools.combinations(considerar, r):
-                yield list(comb)
-
-def ruta_backtracking(p: Problema, distancia_mas_corta, active_hub_nodes):
-    """Usa backtracking para encontrar la ruta óptima del camión.
-    Retorna (distancia_total, ruta_lista)"""
-    deposito = p.deposito_id
-    destinos = frozenset(paq.id_nodo_destino for paq in p.paquetes)
-    recargas = frozenset(active_hub_nodes) | {deposito}
-    capacidad = p.capacidad_camion
-
-    mejor_costo = float('inf')
-    mejor_ruta = None
-
-    def backtrack(posicion_actual, entregado, capacidad_restante, costo_actual, ruta_actual):
-        nonlocal mejor_costo, mejor_ruta
-
-        if costo_actual >= mejor_costo:
-            return
-
-        if len(entregado) == len(destinos):
-            # Todos entregados, volver al depósito si no estamos ahí
-            if posicion_actual != deposito:
-                cost_to_depot = distancia_mas_corta[posicion_actual][deposito]
-                total_cost = costo_actual + cost_to_depot
-                if total_cost < mejor_costo:
-                    mejor_costo = total_cost
-                    mejor_ruta = ruta_actual + [deposito]
-            else:
-                if costo_actual < mejor_costo:
-                    mejor_costo = costo_actual
-                    mejor_ruta = ruta_actual[:]
-            return
-
-        # Cota inferior: suma de distancias mínimas a destinos no entregados
-        no_entregado = destinos - entregado
-        limite_inferior = 0.0
-        for dest in no_entregado:
-            min_d = min(distancia_mas_corta[loc][dest] for loc in recargas | {posicion_actual})
-            limite_inferior += min_d
-        if costo_actual + limite_inferior >= mejor_costo:
-            return
-
-        # Acciones: entregar a un destino no entregado si hay capacidad
-        if capacidad_restante > 0:
-            for dest in no_entregado:
-                dist = distancia_mas_corta[posicion_actual][dest]
-                costo_nuevo = costo_actual + dist
-                nueva_ruta = ruta_actual + [dest]
-                backtrack(dest, entregado | {dest}, capacidad_restante - 1, costo_nuevo, nueva_ruta)
-
-        # O recargar en un punto de recarga
-        for rec in recargas:
-            if rec == posicion_actual:
-                continue  # Ya estamos aquí, pero permitir recargar si capacidad < capacidad
-            dist = distancia_mas_corta[posicion_actual][rec]
-            costo_nuevo = costo_actual + dist
-            nueva_ruta = ruta_actual + [rec]
-            backtrack(rec, entregado, capacidad, costo_nuevo, nueva_ruta)
-
-    backtrack(deposito, frozenset(), capacidad, 0.0, [deposito])
-    return mejor_costo, mejor_ruta
-
-def evaluar_subconjuntos_hubs(p: Problema, distancia_mas_corta, subconjunto_hubs):
-    """Calcula costo total para un subconjunto de hubs activos."""
-    costo_de_activacion = sum(h.costo_activacion for h in subconjunto_hubs)
-    nodos_activos = [h.id_nodo for h in subconjunto_hubs]
-    distancia, ruta = ruta_backtracking(p, distancia_mas_corta, nodos_activos)
-    return distancia + costo_de_activacion, distancia, costo_de_activacion, ruta
-
-def encontrar_mejor_combinacion(p: Problema, distancia_mas_corta, limite_de_tiempo=30.0):
-    hubs = p.hubs
-    mejor = (float('inf'), None, None, None)  # (coste, subset, detalle, ruta)
-    empezar_timer = time.time()
-    for subconjunto in enumerar_subconjuntos_hubs(hubs):
-        if time.time() - empezar_timer > limite_de_tiempo:
+def leer_seccion(lineas, inicio, cantidad, parser):
+    """Lee una sección con un número fijo de líneas y aplica un parser."""
+    datos = []
+    leidos = 0
+    for i in range(inicio, len(lineas)):
+        if leidos >= cantidad:
             break
-        coste_total, dist_solo, costo_activacion, ruta = evaluar_subconjuntos_hubs(p, distancia_mas_corta, subconjunto)
-        if coste_total < mejor[0]:
-            mejor = (coste_total, subconjunto, (dist_solo, costo_activacion), ruta)
-    return mejor
+        linea = eliminar_comentario(lineas[i])
+        if not linea:
+            continue
+        try:
+            datos.append(parser(linea))
+            leidos += 1
+        except Exception:
+            print(f"Advertencia: línea ignorada -> {linea}")
+    return datos
+
+
+def leer_datos(nombre_archivo: str) -> dict:
+    """Lee un archivo de problema y retorna un diccionario con los datos."""
+    try:
+        with open(nombre_archivo, 'r') as f:
+            lineas = f.readlines()
+    except FileNotFoundError:
+        print(f"Error: No se pudo abrir el archivo '{nombre_archivo}'")
+        return None
+
+    datos = {
+        'configuracion': {},
+        'nodos': {},
+        'hubs': {},
+        'paquetes': {},
+        'aristas': {}
+    }
+
+    # --- LEER CONFIGURACIÓN ---
+    for i, linea in enumerate(lineas):
+        linea = eliminar_comentario(linea)
+        if not linea:
+            continue
+        if linea.startswith("NODOS"):
+            datos['configuracion']['num_nodos'] = int(linea.split()[1])
+        elif linea.startswith("HUBS"):
+            datos['configuracion']['num_hubs'] = int(linea.split()[1])
+        elif linea.startswith("PAQUETES"):
+            datos['configuracion']['num_paquetes'] = int(linea.split()[1])
+        elif linea.startswith("CAPACIDAD_CAMION"):
+            datos['configuracion']['capacidad_camion'] = int(linea.split()[1])
+        elif linea.startswith("DEPOSITO_ID"):
+            datos['configuracion']['deposito_id'] = int(linea.split()[1])
+            break  # Termina lectura de configuración
+
+    # --- DETECTAR INICIOS DE SECCIONES ---
+    secciones = {}
+    for i, linea in enumerate(lineas):
+        if "---" in linea:
+            parts = linea.split("---")
+            if len(parts) > 1:
+                nombre = parts[1].strip().split()[0].upper()
+                secciones[nombre] = i + 1
+
+    # --- PARSERS ---
+    parse_nodo = lambda l: (int(l.split()[0]), {'x': int(l.split()[1]), 'y': int(l.split()[2])})
+    parse_hub = lambda l: (int(l.split()[0]), float(l.split()[1]))
+    parse_paquete = lambda l: (int(l.split()[0]), {'origen': int(l.split()[1]), 'destino': int(l.split()[2])})
+    parse_arista = lambda l: ((int(l.split()[0]), int(l.split()[1])), float(l.split()[2]))
+
+    # --- LEER CADA SECCIÓN ---
+    if "NODOS" in secciones:
+        nodos_list = leer_seccion(lineas, secciones["NODOS"], datos['configuracion']['num_nodos'], parse_nodo)
+        for id_nodo, props in nodos_list:
+            tipo = 'entrega'
+            if id_nodo == datos['configuracion']['deposito_id']:
+                tipo = 'deposito'
+            elif id_nodo in [1, 2, 3]:  # Assuming hubs are 1,2,3
+                tipo = 'hub'
+            datos['nodos'][id_nodo] = {**props, 'tipo': tipo}
+    if "HUBS" in secciones:
+        hubs_list = leer_seccion(lineas, secciones["HUBS"], datos['configuracion']['num_hubs'], parse_hub)
+        for id_hub, costo in hubs_list:
+            datos['hubs'][id_hub] = costo
+    if "PAQUETES" in secciones:
+        paquetes_list = leer_seccion(lineas, secciones["PAQUETES"], datos['configuracion']['num_paquetes'], parse_paquete)
+        for id_paq, props in paquetes_list:
+            datos['paquetes'][id_paq] = props
+    if "ARISTAS" in secciones:
+        # Las aristas pueden tener número variable → sin límite de cantidad
+        aristas_list = leer_seccion(lineas, secciones["ARISTAS"], float('inf'), parse_arista)
+        for edge, peso in aristas_list:
+            datos['aristas'][edge] = peso
+            # Assuming undirected
+            if (edge[1], edge[0]) not in datos['aristas']:
+                datos['aristas'][(edge[1], edge[0])] = peso
+
+    return datos
+
+
+def floyd_warshall(aristas, num_nodos):
+    """Calcula las distancias mínimas entre todos los pares de nodos usando Floyd-Warshall."""
+    grafo = [[float('inf')] * num_nodos for _ in range(num_nodos)]
+
+    # Diagonal a 0
+    for i in range(num_nodos):
+        grafo[i][i] = 0
+
+    # Cargar aristas (asumiendo grafo no dirigido)
+    for (n1, n2), peso in aristas.items():
+        grafo[n1][n2] = peso
+        grafo[n2][n1] = peso
+
+    # Aplicar Floyd-Warshall
+    for k in range(num_nodos):
+        for i in range(num_nodos):
+            for j in range(num_nodos):
+                if grafo[i][k] != float('inf') and grafo[k][j] != float('inf'):
+                    grafo[i][j] = min(grafo[i][j], grafo[i][k] + grafo[k][j])
+
+    return grafo
+
+
+def calcularMejorCamino(datos, grafo):
+    """Encuentra la mejor combinación de hubs activados y ruta del camión para minimizar el costo total."""
+    deposito = datos['configuracion']['deposito_id']
+    hubs = list(datos['hubs'].keys())
+    capacidad = datos['configuracion']['capacidad_camion']
+    costosHubs = datos['hubs']
+
+    # Agrupar paquetes por destino
+    paquetesPorNodo = {}
+    for id_paq, paq in datos['paquetes'].items():
+        dest = paq['destino']
+        paquetesPorNodo[dest] = paquetesPorNodo.get(dest, 0) + 1
+
+    # Inicializar mejores valores
+    mejor_costo = float('inf')
+    mejor_hubs = []
+    mejor_dist = 0
+    mejor_ruta = []
+
+    def backtrack(index, activados):
+        nonlocal mejor_costo, mejor_hubs, mejor_dist, mejor_ruta
+        if index == len(hubs):
+            # calcular costo
+            hubs_act = [h for h in hubs if activados[h]]
+            costo_h = sum(costosHubs[h] for h in hubs_act)
+            dist_total = 0
+            ruta = [deposito]
+            # Agrupar destinos en viajes
+            destinos = sorted(paquetesPorNodo.keys())
+            viajes = []
+            i = 0
+            while i < len(destinos):
+                viaje = []
+                suma = 0
+                while i < len(destinos) and suma + paquetesPorNodo[destinos[i]] <= capacidad:
+                    viaje.append(destinos[i])
+                    suma += paquetesPorNodo[destinos[i]]
+                    i += 1
+                viajes.append(viaje)
+            # Para cada viaje, calcular distancia y ruta
+            for viaje in viajes:
+                if not viaje:
+                    continue
+                # elegir mejor punto_partida
+                min_costo_viaje = float('inf')
+                mejor_punto = deposito
+                for punto in [deposito] + hubs_act:
+                    dist_viaje = grafo[punto][viaje[0]]
+                    for j in range(len(viaje)-1):
+                        dist_viaje += grafo[viaje[j]][viaje[j+1]]
+                    dist_viaje += grafo[viaje[-1]][deposito]
+                    if dist_viaje < min_costo_viaje:
+                        min_costo_viaje = dist_viaje
+                        mejor_punto = punto
+                dist_total += min_costo_viaje
+                # agregar a ruta
+                if mejor_punto != deposito:
+                    ruta.append(mejor_punto)
+                for d in viaje:
+                    ruta.append(d)
+                ruta.append(deposito)
+            costo_total = dist_total + costo_h
+            if costo_total < mejor_costo:
+                mejor_costo = costo_total
+                mejor_hubs = hubs_act[:]
+                mejor_dist = dist_total
+                mejor_ruta = ruta[:]
+            return
+
+        # no activar
+        backtrack(index + 1, activados)
+        # activar
+        activados[hubs[index]] = True
+        backtrack(index + 1, activados)
+        activados[hubs[index]] = False
+
+    activados = {h: False for h in hubs}
+    backtrack(0, activados)
+
+    ruta_optima = mejor_ruta
+    costo_total = mejor_costo
+    distancia_recorrida = mejor_dist
+    costo_hubs = costo_total - distancia_recorrida
+    return ruta_optima, mejor_hubs, costo_total, distancia_recorrida, costo_hubs
+
 
 def main():
     if len(sys.argv) != 2:
-        print("Fallo")
+        print(f"Uso: {sys.argv[0]} <nombre_del_archivo.txt>")
         sys.exit(1)
 
-    nombre = sys.argv[1]
-    if not nombre.lower().endswith('.txt'):
-        nombre = nombre + '.txt'
+    nombre_archivo = sys.argv[1]
 
-    # intentar como ruta relativa al directorio del script si no existe en cwd
-    if not os.path.isabs(nombre) and not os.path.exists(nombre):
-        posible = os.path.join(os.path.dirname(__file__), nombre)
-        if os.path.exists(posible):
-            nombre = posible
+    start_time = time.time()
 
-    problema = leer_archivo(nombre)
-    if problema is None:
-        print("Fallo")
+    datos = leer_datos(nombre_archivo)
+    if datos is None:
+        print("\n>> Hubo un error al leer o procesar el archivo. Revisa el formato.")
         sys.exit(1)
 
-    # 1) construir grafo euclidiano completo
-    construir_grafo_euclediano(problema)
+    # Calcular distancias mínimas usando Floyd-Warshall
+    num_nodos = datos['configuracion']['num_nodos']
+    grafo = floyd_warshall(datos['aristas'], num_nodos)
 
-    # 2) Floyd–Warshall para distancias mínimas
-    mas_corto = floyd_warshall(problema)
+    # Calcular la mejor ruta
+    ruta_optima, mejor_hubs, costo_total, distancia_recorrida, costo_hubs = calcularMejorCamino(datos, grafo)
 
-    # 3) probar subconjuntos de hubs y simular reparto
-    tiempoDeInicio = time.time()
-    mejor_coste, mejor_subconjunto, detalle, mejor_ruta = encontrar_mejor_combinacion(problema, mas_corto, limite_de_tiempo=30.0)
-    transcurrido = time.time() - tiempoDeInicio
+    end_time = time.time()
+    tiempo_ejecucion = end_time - start_time
 
-    # preparar métricas para escritura
-    if mejor_subconjunto is None:
-        solo_distancia = 0.0
-        coste_activacion = 0.0
-        mejor_ruta = [problema.deposito_id, problema.deposito_id]
-        mejor_coste = float('inf')
-    else:
-        solo_distancia, coste_activacion = detalle
-
-    # escribir solucion.txt en el mismo directorio del script
-    salida_path = os.path.join(os.path.dirname(__file__), "solucion.txt")
-    with open(salida_path, "w", encoding="utf-8") as f:
+    # Escribir a solucion.txt
+    with open('solucion.txt', 'w') as f:
         f.write("// --- HUBS ACTIVADOS ---\n")
-        if mejor_subconjunto:
-            for h in mejor_subconjunto:
-                f.write(f"{h.id_nodo}\n")
+        for hub in mejor_hubs:
+            f.write(f"{hub}\n")
         f.write("\n// --- RUTA OPTIMA ---\n")
-        ruta_str = " -> ".join(str(n) for n in mejor_ruta)
-        f.write(ruta_str + "\n\n")
-        f.write(" // --- METRICAS ---\n")
-        f.write(f"COSTO_TOTAL : {mejor_coste:.2f}\n")
-        f.write(f"DISTANCIA_RECORRIDA : {solo_distancia:.2f}\n")
-        f.write(f"COSTO_HUBS : {coste_activacion:.2f}\n")
-        f.write(f"TIEMPO_EJECUCION : {transcurrido:.6f} segundos\n")
+        f.write(" -> ".join(map(str, ruta_optima)) + "\n")
+        f.write("\n// --- METRICAS ---\n")
+        f.write(f"COSTO_TOTAL: {costo_total:.2f}\n")
+        f.write(f"DISTANCIA_RECORRIDA: {distancia_recorrida:.2f}\n")
+        f.write(f"COSTO_HUBS: {costo_hubs:.2f}\n")
+        f.write(f"TIEMPO_EJECUCION: {tiempo_ejecucion:.6f} segundos\n")
 
-    print("Exito")
 
 if __name__ == "__main__":
     main()
