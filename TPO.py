@@ -77,32 +77,63 @@ def leer_datos(nombre_archivo: str) -> dict:
                 secciones[nombre] = i + 1
 
     # --- PARSERS SIMPLES PARA CADA SECCIÓN ---
-    parse_nodo = lambda l: (int(l.split()[0]), {'x': int(l.split()[1]), 'y': int(l.split()[2])})
-    parse_hub = lambda l: (int(l.split()[0]), float(l.split()[1]))
-    parse_paquete = lambda l: (int(l.split()[0]), {'origen': int(l.split()[1]), 'destino': int(l.split()[2])})
-    parse_arista = lambda l: ((int(l.split()[0]), int(l.split()[1])), float(l.split()[2]))
+
+    def parsear_nodo(linea):
+        """Convierte una línea de la sección NODOS en una tupla (id, datos)."""
+        partes = linea.split()
+        id_nodo = int(partes[0])
+        x = int(partes[1])
+        y = int(partes[2])
+        return id_nodo, {'x': x, 'y': y}
+
+
+    def parsear_hub(linea):
+        """Convierte una línea de la sección HUBS en una tupla (id, costo)."""
+        partes = linea.split()
+        id_hub = int(partes[0])
+        costo = float(partes[1])
+        return id_hub, costo
+
+
+    def parsear_paquete(linea):
+        """Convierte una línea de la sección PAQUETES en una tupla (id, {origen, destino})."""
+        partes = linea.split()
+        id_paquete = int(partes[0])
+        origen = int(partes[1])
+        destino = int(partes[2])
+        return id_paquete, {'origen': origen, 'destino': destino}
+
+
+    def parsear_arista(linea):
+        """Convierte una línea de la sección ARISTAS en una tupla ((nodo1, nodo2), peso)."""
+        partes = linea.split()
+        nodo1 = int(partes[0])
+        nodo2 = int(partes[1])
+        peso = float(partes[2])
+        return (nodo1, nodo2), peso
+
 
     # --- LEER NODOS ---
     if "NODOS" in secciones:
-        nodos_list = leer_seccion(lineas, secciones["NODOS"], datos['configuracion']['num_nodos'], parse_nodo)
+        nodos_list = leer_seccion(lineas, secciones["NODOS"], datos['configuracion']['num_nodos'], parsear_nodo)
         for id_nodo, props in nodos_list:
             datos['nodos'][id_nodo] = props
 
     # --- LEER HUBS ---
     if "HUBS" in secciones:
-        hubs_list = leer_seccion(lineas, secciones["HUBS"], datos['configuracion']['num_hubs'], parse_hub)
+        hubs_list = leer_seccion(lineas, secciones["HUBS"], datos['configuracion']['num_hubs'], parsear_hub)
         for id_hub, costo in hubs_list:
             datos['hubs'][id_hub] = costo
 
     # --- LEER PAQUETES ---
     if "PAQUETES" in secciones:
-        paquetes_list = leer_seccion(lineas, secciones["PAQUETES"], datos['configuracion']['num_paquetes'], parse_paquete)
+        paquetes_list = leer_seccion(lineas, secciones["PAQUETES"], datos['configuracion']['num_paquetes'], parsear_paquete)
         for id_paq, props in paquetes_list:
             datos['paquetes'][id_paq] = props
 
     # --- LEER ARISTAS ---
     if "ARISTAS" in secciones:
-        aristas_list = leer_seccion(lineas, secciones["ARISTAS"], float('inf'), parse_arista)
+        aristas_list = leer_seccion(lineas, secciones["ARISTAS"], float('inf'), parsear_arista)
         for edge, peso in aristas_list:
             datos['aristas'][edge] = peso
             # grafo no dirigido
