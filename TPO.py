@@ -1,266 +1,251 @@
 #!/usr/bin/env python3
+
 import sys
-import time
+from dataclasses import dataclass
+from typing import List, Optional
 
 
-# ------------------------------------------------------------
-# FUNCIONES DE LECTURA Y PREPARACIÓN DE DATOS
-# ------------------------------------------------------------
+@dataclass
+class Nodo:
+    id: int
+    x: int
+    y: int
+
+
+@dataclass
+class Hub:
+    id_nodo: int
+    costo_activacion: float
+
+
+@dataclass
+class Paquete:
+    id: int
+    id_nodo_origen: int
+    id_nodo_destino: int
+
+
+class Problema:
+    def __init__(self):
+        self.num_nodos: int = 0
+        self.num_hubs: int = 0
+        self.num_paquetes: int = 0
+        self.capacidad_camion: int = 0
+        self.deposito_id: int = 0
+        
+        self.nodos: List[Nodo] = []
+        self.hubs: List[Hub] = []
+        self.paquetes: List[Paquete] = []
+        self.grafo_distancias: List[List[float]] = []
+
 
 def eliminar_comentario(linea: str) -> str:
-    """Quita los comentarios (// ...) y espacios sobrantes."""
-    return linea.split("//")[0].strip()
+    """Elimina comentarios de una línea."""
+    if "//" in linea:
+        return linea[:linea.index("//")].strip()
+    return linea.strip()
 
 
-def leer_seccion(lineas, inicio, cantidad, parser):
-    """Lee una sección del archivo con una cantidad conocida de líneas."""
-    datos = []
-    leidos = 0
-    for i in range(inicio, len(lineas)):
-        if leidos >= cantidad:
-            break
-        linea = eliminar_comentario(lineas[i])
-        if not linea:
-            continue
-        try:
-            datos.append(parser(linea))
-            leidos += 1
-        except Exception:
-            print(f"Advertencia: no se pudo leer la línea -> {linea}")
-    return datos
-
-
-def leer_datos(nombre_archivo: str) -> dict:
-    """Lee el archivo del caso y devuelve todos los datos en un diccionario."""
+def leer_archivo(nombre_archivo: str) -> Optional[Problema]:
+    """Lee un archivo de problema y retorna un objeto Problema."""
     try:
         with open(nombre_archivo, 'r') as f:
             lineas = f.readlines()
     except FileNotFoundError:
-        print(f"Error: No se encontró el archivo '{nombre_archivo}'")
+        print(f"Error: No se pudo abrir el archivo '{nombre_archivo}'")
         return None
 
-    datos = {
-        'configuracion': {},
-        'nodos': {},
-        'hubs': {},
-        'paquetes': {},
-        'aristas': {}
-    }
+    p = Problema()
 
-    # --- LEER CONFIGURACIÓN GENERAL ---
-    for linea in lineas:
-        linea = eliminar_comentario(linea)
+    # --- LEER CONFIGURACIÓN (primeras líneas) ---
+    idx = 0
+    while idx < len(lineas):
+        linea = eliminar_comentario(lineas[idx])
+        
         if not linea:
+            idx += 1
             continue
-        partes = linea.split()
-        if len(partes) < 2:
-            continue
-        if partes[0] == "NODOS":
-            datos['configuracion']['num_nodos'] = int(partes[1])
-        elif partes[0] == "HUBS":
-            datos['configuracion']['num_hubs'] = int(partes[1])
-        elif partes[0] == "PAQUETES":
-            datos['configuracion']['num_paquetes'] = int(partes[1])
-        elif partes[0] == "CAPACIDAD_CAMION":
-            datos['configuracion']['capacidad_camion'] = int(partes[1])
-        elif partes[0] == "DEPOSITO_ID":
-            datos['configuracion']['deposito_id'] = int(partes[1])
-            break  # termina la lectura de configuración
+        
+        if linea.startswith("NODOS"):
+            p.num_nodos = int(linea.split()[1])
+        elif linea.startswith("HUBS"):
+            p.num_hubs = int(linea.split()[1])
+        elif linea.startswith("PAQUETES"):
+            p.num_paquetes = int(linea.split()[1])
+        elif linea.startswith("CAPACIDAD_CAMION"):
+            p.capacidad_camion = int(linea.split()[1])
+        elif linea.startswith("DEPOSITO_ID"):
+            p.deposito_id = int(linea.split()[1])
+            idx += 1
+            break  # <-- BREAK aquí después de encontrar DEPOSITO_ID
+        
+        idx += 1
 
-    # --- DETECTAR SECCIONES (--- NODOS, HUBS, ETC.) ---
-    secciones = {}
-    for i, linea in enumerate(lineas):
-        if "---" in linea:
-            partes = linea.split("---")
-            if len(partes) > 1:
-                nombre = partes[1].strip().split()[0].upper()
-                secciones[nombre] = i + 1
+    # Inicializar matriz de distancias
+    p.grafo_distancias = [[0.0 for _ in range(p.num_nodos)] for _ in range(p.num_nodos)]
 
-    # --- PARSERS SIMPLES PARA CADA SECCIÓN ---
-    parse_nodo = lambda l: (int(l.split()[0]), {'x': int(l.split()[1]), 'y': int(l.split()[2])})
-    parse_hub = lambda l: (int(l.split()[0]), float(l.split()[1]))
-    parse_paquete = lambda l: (int(l.split()[0]), {'origen': int(l.split()[1]), 'destino': int(l.split()[2])})
-    parse_arista = lambda l: ((int(l.split()[0]), int(l.split()[1])), float(l.split()[2]))
+    # --- ENCONTRAR Y LEER CADA SECCIÓN ---
+    
+    # Buscar encabezado de NODOS
+    start_nodos = -1
+    for i in range(idx, len(lineas)):
+        if "NODOS" in lineas[i] and "---" in lineas[i]:
+            start_nodos = i + 1
+            break
+    
+    # Leer NODOS
+    if start_nodos > 0:
+        nodos_leidos = 0
+        for i in range(start_nodos, len(lineas)):
+            if nodos_leidos >= p.num_nodos:
+                break
+            linea = eliminar_comentario(lineas[i])
+            if not linea:
+                continue
+            try:
+                partes = linea.split()
+                nodo = Nodo(id=int(partes[0]), x=int(partes[1]), y=int(partes[2]))
+                p.nodos.append(nodo)
+                nodos_leidos += 1
+            except (ValueError, IndexError):
+                pass
 
-    # --- LEER NODOS ---
-    if "NODOS" in secciones:
-        nodos_list = leer_seccion(lineas, secciones["NODOS"], datos['configuracion']['num_nodos'], parse_nodo)
-        for id_nodo, props in nodos_list:
-            datos['nodos'][id_nodo] = props
+    # Buscar encabezado de HUBS
+    start_hubs = -1
+    for i in range(len(lineas)):
+        if "HUBS" in lineas[i] and "---" in lineas[i]:
+            start_hubs = i + 1
+            break
+    
+    # Leer HUBS
+    if start_hubs > 0:
+        hubs_leidos = 0
+        for i in range(start_hubs, len(lineas)):
+            if hubs_leidos >= p.num_hubs:
+                break
+            linea = eliminar_comentario(lineas[i])
+            if not linea:
+                continue
+            try:
+                partes = linea.split()
+                hub = Hub(id_nodo=int(partes[0]), costo_activacion=float(partes[1]))
+                p.hubs.append(hub)
+                hubs_leidos += 1
+            except (ValueError, IndexError):
+                pass
 
-    # --- LEER HUBS ---
-    if "HUBS" in secciones:
-        hubs_list = leer_seccion(lineas, secciones["HUBS"], datos['configuracion']['num_hubs'], parse_hub)
-        for id_hub, costo in hubs_list:
-            datos['hubs'][id_hub] = costo
+    # Buscar encabezado de PAQUETES
+    start_paquetes = -1
+    for i in range(len(lineas)):
+        if "PAQUETES" in lineas[i] and "---" in lineas[i]:
+            start_paquetes = i + 1
+            break
+    
+    # Leer PAQUETES
+    if start_paquetes > 0:
+        paquetes_leidos = 0
+        for i in range(start_paquetes, len(lineas)):
+            if paquetes_leidos >= p.num_paquetes:
+                break
+            linea = eliminar_comentario(lineas[i])
+            if not linea:
+                continue
+            try:
+                partes = linea.split()
+                paquete = Paquete(id=int(partes[0]), 
+                                 id_nodo_origen=int(partes[1]), 
+                                 id_nodo_destino=int(partes[2]))
+                p.paquetes.append(paquete)
+                paquetes_leidos += 1
+            except (ValueError, IndexError):
+                pass
 
-    # --- LEER PAQUETES ---
-    if "PAQUETES" in secciones:
-        paquetes_list = leer_seccion(lineas, secciones["PAQUETES"], datos['configuracion']['num_paquetes'], parse_paquete)
-        for id_paq, props in paquetes_list:
-            datos['paquetes'][id_paq] = props
+    # Buscar encabezado de ARISTAS
+    start_aristas = -1
+    for i in range(len(lineas)):
+        if "ARISTAS" in lineas[i] and "---" in lineas[i]:
+            start_aristas = i + 1
+            break
+    
+    # Leer ARISTAS
+    if start_aristas > 0:
+        for i in range(start_aristas, len(lineas)):
+            linea = eliminar_comentario(lineas[i])
+            if not linea:
+                continue
+            try:
+                partes = linea.split()
+                if len(partes) >= 3:
+                    u, v, peso = int(partes[0]), int(partes[1]), float(partes[2])
+                    if u < p.num_nodos and v < p.num_nodos:
+                        p.grafo_distancias[u][v] = peso
+                        p.grafo_distancias[v][u] = peso
+            except (ValueError, IndexError):
+                pass
 
-    # --- LEER ARISTAS ---
-    if "ARISTAS" in secciones:
-        aristas_list = leer_seccion(lineas, secciones["ARISTAS"], float('inf'), parse_arista)
-        for edge, peso in aristas_list:
-            datos['aristas'][edge] = peso
-            # grafo no dirigido
-            if (edge[1], edge[0]) not in datos['aristas']:
-                datos['aristas'][(edge[1], edge[0])] = peso
-
-    return datos
-
-
-# ------------------------------------------------------------
-# ALGORITMO DE FLOYD-WARSHALL
-# ------------------------------------------------------------
-
-def floyd_warshall(aristas, num_nodos):
-    """Calcula las distancias mínimas entre todos los nodos."""
-    dist = [[float('inf')] * num_nodos for _ in range(num_nodos)]
-    for i in range(num_nodos):
-        dist[i][i] = 0
-    for (u, v), peso in aristas.items():
-        dist[u][v] = peso
-        dist[v][u] = peso
-
-    for k in range(num_nodos):
-        for i in range(num_nodos):
-            for j in range(num_nodos):
-                if dist[i][k] + dist[k][j] < dist[i][j]:
-                    dist[i][j] = dist[i][k] + dist[k][j]
-    return dist
-
-
-# ------------------------------------------------------------
-# BÚSQUEDA DE RUTA Y HUBS (VERSIÓN SIMPLE Y CLARA)
-# ------------------------------------------------------------
-
-def calcular_mejor_camino(datos, matriz):
-    """Decide qué hubs activar y calcula una ruta razonable con menor costo."""
-
-    deposito = datos['configuracion']['deposito_id']
-    capacidad = datos['configuracion']['capacidad_camion']
-    hubs = list(datos['hubs'].keys())
-    costo_hubs = datos['hubs']
-
-    # Agrupar cuántos paquetes van a cada destino
-    paquetes_por_destino = {}
-    for _, paquete in datos['paquetes'].items():
-        destino = paquete['destino']
-        paquetes_por_destino[destino] = paquetes_por_destino.get(destino, 0) + 1
-
-    # Valores iniciales
-    mejor_costo = float('inf')
-    mejor_hubs = []
-    mejor_ruta = []
-    mejor_distancia = 0
-
-    # Recorremos todas las combinaciones posibles de hubs activados (simple)
-    for i in range(2 ** len(hubs)):
-        hubs_activos = []
-        costo_activacion = 0
-
-        for j, hub in enumerate(hubs):
-            if (i >> j) & 1:  # si el bit está encendido, el hub se activa
-                hubs_activos.append(hub)
-                costo_activacion += costo_hubs[hub]
-
-        # Armar los viajes del camión
-        destinos = list(paquetes_por_destino.keys())
-        viajes = []
-        viaje_actual = []
-        carga_actual = 0
-
-        # dividir los destinos en grupos que respeten la capacidad del camión
-        for d in destinos:
-            cant = paquetes_por_destino[d]
-            if carga_actual + cant > capacidad:
-                viajes.append(viaje_actual)
-                viaje_actual = []
-                carga_actual = 0
-            viaje_actual.append(d)
-            carga_actual += cant
-        if viaje_actual:
-            viajes.append(viaje_actual)
-
-        # Calcular distancia total de todos los viajes
-        distancia_total = 0
-        ruta_total = [deposito]
-
-        for viaje in viajes:
-            mejor_inicio = deposito
-            menor_distancia_viaje = float('inf')
-
-            # probar comenzar desde el depósito o desde algún hub activo
-            for punto_inicio in [deposito] + hubs_activos:
-                distancia_viaje = matriz[punto_inicio][viaje[0]]
-                for k in range(len(viaje) - 1):
-                    distancia_viaje += matriz[viaje[k]][viaje[k + 1]]
-                distancia_viaje += matriz[viaje[-1]][deposito]
-                if distancia_viaje < menor_distancia_viaje:
-                    menor_distancia_viaje = distancia_viaje
-                    mejor_inicio = punto_inicio
-
-            distancia_total += menor_distancia_viaje
-            ruta_total.append(mejor_inicio)
-            for d in viaje:
-                ruta_total.append(d)
-            ruta_total.append(deposito)
-
-        costo_total = distancia_total + costo_activacion
-
-        if costo_total < mejor_costo:
-            mejor_costo = costo_total
-            mejor_hubs = hubs_activos
-            mejor_ruta = ruta_total
-            mejor_distancia = distancia_total
-
-    costo_solo_hubs = mejor_costo - mejor_distancia
-
-    return mejor_ruta, mejor_hubs, mejor_costo, mejor_distancia, costo_solo_hubs
+    return p
 
 
-# ------------------------------------------------------------
-# PROGRAMA PRINCIPAL
-# ------------------------------------------------------------
+def imprimir_problema(p: Problema) -> None:
+    """Imprime un resumen del problema cargado."""
+    print("\n============== RESUMEN DEL PROBLEMA CARGADO ===============")
+    
+    print("\n--- CONFIGURACION ---")
+    print(f"Total de Nodos:\t\t{p.num_nodos}")
+    print(f"Total de Hubs:\t\t{p.num_hubs}")
+    print(f"Total de Paquetes:\t{p.num_paquetes}")
+    print(f"Capacidad del Camión:\t{p.capacidad_camion}")
+    print(f"ID del Depósito:\t\t{p.deposito_id}")
+    
+    print("\n--- NODOS ---")
+    for nodo in p.nodos:
+        print(f"  Nodo {nodo.id:2d}: (x={nodo.x:4d}, y={nodo.y:4d})")
+    
+    print("\n--- HUBS ---")
+    for hub in p.hubs:
+        print(f"  Hub en Nodo {hub.id_nodo:2d}: Costo de Activación = {hub.costo_activacion:.2f}")
+    
+    print("\n--- PAQUETES ---")
+    for paquete in p.paquetes:
+        print(f"  Paquete {paquete.id:2d}: Origen={paquete.id_nodo_origen} -> Destino={paquete.id_nodo_destino}")
+    
+    print("\n--- MUESTRA DEL GRAFO (MATRIZ DE ADYACENCIA) ---")
+    
+    print("      ", end="")
+    for j in range(min(10, p.num_nodos)):
+        print(f"{j:7d} ", end="")
+    print()
+    
+    print("----", end="")
+    for j in range(min(10, p.num_nodos)):
+        print("--------", end="")
+    print()
+    
+    for i in range(min(10, p.num_nodos)):
+        print(f"{i:4d}| ", end="")
+        for j in range(min(10, p.num_nodos)):
+            print(f"{p.grafo_distancias[i][j]:7.2f} ", end="")
+        print()
+    
+    print("===========================================================\n")
+
 
 def main():
     if len(sys.argv) != 2:
-        print(f"Uso: {sys.argv[0]} <archivo_caso.txt>")
+        print(f"Uso: {sys.argv[0]} <nombre_del_archivo.txt>")
         sys.exit(1)
 
-    archivo = sys.argv[1]
-    inicio = time.time()
+    nombre_archivo = sys.argv[1]
+    print(f"Leyendo el archivo de problema: {nombre_archivo}")
 
-    datos = leer_datos(archivo)
-    if datos is None:
-        print("No se pudo leer el archivo correctamente.")
+    problema = leer_archivo(nombre_archivo)
+    if problema is None:
+        print("\n>> Hubo un error al leer o procesar el archivo. Revisa el formato.")
         sys.exit(1)
 
-    num_nodos = datos['configuracion']['num_nodos']
-    matriz = floyd_warshall(datos['aristas'], num_nodos)
-
-    ruta, hubs, costo_total, distancia, costo_hubs = calcular_mejor_camino(datos, matriz)
-
-    fin = time.time()
-    duracion = fin - inicio
-
-    # --- GUARDAR RESULTADO ---
-    with open("solucion.txt", "w") as f:
-        f.write("// --- HUBS ACTIVADOS ---\n")
-        for h in hubs:
-            f.write(f"{h}\n")
-        f.write("\n// --- RUTA OPTIMA ---\n")
-        f.write(" -> ".join(map(str, ruta)) + "\n")
-        f.write("\n// --- METRICAS ---\n")
-        f.write(f"COSTO_TOTAL: {costo_total:.2f}\n")
-        f.write(f"DISTANCIA_RECORRIDA: {distancia:.2f}\n")
-        f.write(f"COSTO_HUBS: {costo_hubs:.2f}\n")
-        f.write(f"TIEMPO_EJECUCION: {duracion:.6f} segundos\n")
-
-    print("Archivo solucion.txt generado con éxito.")
+    print("\n¡Archivo leído y procesado con éxito!")
+    imprimir_problema(problema)
+    print("Memoria liberada correctamente.")
 
 
 if __name__ == "__main__":
