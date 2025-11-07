@@ -76,7 +76,7 @@ def leer_datos(nombre_archivo: str) -> dict:
 
     # --- DETECTAR SECCIONES (--- NODOS, HUBS, ETC.) ---
     secciones = {}
-    for i, linea in enumerate(lineas):
+    for i, linea in enumerate(lineas): #//TODO
         if "---" in linea:
             partes = linea.split("---")
             if len(partes) > 1:
@@ -205,7 +205,7 @@ def calcular_mejor_camino(datos, matriz):
     # Función recursiva de backtracking
     # ---------------------------------------------------------
     def probar_combinaciones(indice, hubs_activos, costo_activacion):
-        nonlocal mejor_costo, mejor_hubs, mejor_ruta, mejor_distancia
+        nonlocal mejor_costo, mejor_hubs, mejor_ruta, mejor_distancia #//TODO
 
         # Caso base: se decidió sobre todos los hubs
         if indice == len(hubs):
