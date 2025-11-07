@@ -207,6 +207,10 @@ def calcular_mejor_camino(datos, matriz):
     def probar_combinaciones(indice, hubs_activos, costo_activacion):
         nonlocal mejor_costo, mejor_hubs, mejor_ruta, mejor_distancia #//TODO
 
+        # Poda: si el costo de activación ya supera el mejor costo total encontrado, no continuar
+        if costo_activacion >= mejor_costo:
+            return
+
         # Caso base: se decidió sobre todos los hubs
         if indice == len(hubs):
             destinos = list(paquetes_por_destino.keys())
