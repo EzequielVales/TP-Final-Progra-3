@@ -6,21 +6,12 @@ import time
 # FUNCIONES DE LECTURA Y PREPARACIÓN DE DATOS
 # ------------------------------------------------------------
 
+#Elimina comentarios y espacios sobrantes dividiendo por //, dejando solo el contenido útil.
 def eliminar_comentario(linea: str) -> str:
-    """
-    Elimina los comentarios de una línea y los espacios sobrantes.
-
-    Paso a paso:
-    1. Divide la línea en dos partes usando "//" como separador.
-    2. Toma la primera parte (antes del comentario).
-    3. Elimina los espacios en blanco al inicio y al final.
-    4. Devuelve la línea limpia.
-    """
     return linea.split("//")[0].strip()
 
-
+#Lee una sección del archivo con una cantidad conocida de líneas.
 def leer_seccion(lineas, inicio, cantidad, parser):
-    """Lee una sección del archivo con una cantidad conocida de líneas."""
     datos = []
     leidos = 0
     for i in range(inicio, len(lineas)):
@@ -36,9 +27,8 @@ def leer_seccion(lineas, inicio, cantidad, parser):
             print(f"Advertencia: no se pudo leer la línea -> {linea}")
     return datos
 
-
+#Lee el archivo del caso y devuelve todos los datos en un diccionario estructurado para trabajarlo mas tarde.
 def leer_datos(nombre_archivo: str) -> dict:
-    """Lee el archivo del caso y devuelve todos los datos en un diccionario estructurado."""
     try:
         with open(nombre_archivo, 'r') as f:
             lineas = f.readlines()
@@ -54,7 +44,7 @@ def leer_datos(nombre_archivo: str) -> dict:
         'aristas': {}
     }
 
-    # --- LEER CONFIGURACIÓN GENERAL ---
+    #Detecta cada parte del archivo casos y lo guarda en su respectivo diccionario.
     for linea in lineas:
         linea = eliminar_comentario(linea)
         if not linea:
@@ -74,17 +64,16 @@ def leer_datos(nombre_archivo: str) -> dict:
             datos['configuracion']['deposito_id'] = int(partes[1])
             break  # termina la lectura de configuración
 
-    # --- DETECTAR SECCIONES (--- NODOS, HUBS, ETC.) ---
+    #Detecta el inicio de una parte de la configuracion, tiene que tener la forma ---XXXXX---
     secciones = {}
-    for i, linea in enumerate(lineas): #//TODO
+    for i, linea in enumerate(lineas):
         if "---" in linea:
             partes = linea.split("---")
             if len(partes) > 1:
                 nombre = partes[1].strip().split()[0].upper()
                 secciones[nombre] = i + 1
 
-    # --- PARSERS SIMPLES PARA CADA SECCIÓN ---
-
+    #Guarda la info de manera conveniente, EJ: nodo 5 5, {'x': 10, 'y': 20}
     def parsear_nodo(linea):
         partes = linea.split()
         id_nodo = int(partes[0])
@@ -112,25 +101,25 @@ def leer_datos(nombre_archivo: str) -> dict:
         peso = float(partes[2])
         return (nodo1, nodo2), peso
 
-    # --- LEER NODOS ---
+    #Lee los nodos
     if "NODOS" in secciones:
         nodos_list = leer_seccion(lineas, secciones["NODOS"], datos['configuracion']['num_nodos'], parsear_nodo)
         for id_nodo, props in nodos_list:
             datos['nodos'][id_nodo] = props
 
-    # --- LEER HUBS ---
+    #Lee los hubs
     if "HUBS" in secciones:
         hubs_list = leer_seccion(lineas, secciones["HUBS"], datos['configuracion']['num_hubs'], parsear_hub)
         for id_hub, costo in hubs_list:
             datos['hubs'][id_hub] = costo
 
-    # --- LEER PAQUETES ---
+    #Lee los paquetes
     if "PAQUETES" in secciones:
         paquetes_list = leer_seccion(lineas, secciones["PAQUETES"], datos['configuracion']['num_paquetes'], parsear_paquete)
         for id_paq, props in paquetes_list:
             datos['paquetes'][id_paq] = props
 
-    # --- LEER ARISTAS ---
+    #Lee las aristas
     if "ARISTAS" in secciones:
         aristas_list = leer_seccion(lineas, secciones["ARISTAS"], float('inf'), parsear_arista)
         for edge, peso in aristas_list:
@@ -146,16 +135,8 @@ def leer_datos(nombre_archivo: str) -> dict:
 # ALGORITMO DE FLOYD-WARSHALL
 # ------------------------------------------------------------
 
+#Calcula las distancias mínimas entre todos los nodos del grafo. Devuelve la matriz de distancias mínimas
 def floyd_warshall(aristas, num_nodos):
-    """
-    Calcula las distancias mínimas entre todos los nodos del grafo usando el algoritmo de Floyd-Warshall.
-
-    Paso a paso:
-    1. Inicializa la matriz de distancias con infinito para todas las parejas, excepto la diagonal con 0.
-    2. Para cada arista directa, establece la distancia como el peso dado.
-    3. Para cada nodo intermedio k, actualiza las distancias entre i y j si pasando por k es más corto.
-    4. Devuelve la matriz de distancias mínimas.
-    """
     dist = [[float('inf')] * num_nodos for _ in range(num_nodos)]
     for i in range(num_nodos):
         dist[i][i] = 0
@@ -173,15 +154,13 @@ def floyd_warshall(aristas, num_nodos):
     return dist
 
 
-
 # ------------------------------------------------------------
 # BACKTRACKING: SELECCIÓN DE HUBS Y RUTA ÓPTIMA
 # ------------------------------------------------------------
 
+#En esta función exploramos las combinaciones de hubs usando Backtracking. Calcula la ruta de menor costo usando
+#(distancia + activación)
 def calcular_mejor_camino(datos, matriz):
-    """Explora combinaciones de hubs activados mediante backtracking 
-    y calcula la ruta de menor costo total (distancia + activación)."""
-
     deposito = datos['configuracion']['deposito_id']
     capacidad = datos['configuracion']['capacidad_camion']
     hubs = list(datos['hubs'].keys())
@@ -189,7 +168,7 @@ def calcular_mejor_camino(datos, matriz):
 
     # Agrupa los paquetes por destino
     paquetes_por_destino = {}
-    for _, paquete in datos['paquetes'].items():    #//TODO
+    for _, paquete in datos['paquetes'].items():
         destino = paquete['destino']
         paquetes_por_destino[destino] = paquetes_por_destino.get(destino, 0) + 1
 
@@ -205,7 +184,7 @@ def calcular_mejor_camino(datos, matriz):
     # Función recursiva de backtracking
     # ---------------------------------------------------------
     def probar_combinaciones(indice, hubs_activos, costo_activacion):
-        nonlocal mejor_costo, mejor_hubs, mejor_ruta, mejor_distancia #//TODO
+        nonlocal mejor_costo, mejor_hubs, mejor_ruta, mejor_distancia
 
         # Poda: si el costo de activación ya supera el mejor costo total encontrado, no continuar
         if costo_activacion >= mejor_costo:
@@ -293,7 +272,7 @@ def calcular_mejor_camino(datos, matriz):
 # ------------------------------------------------------------
 
 def main():
-    if len(sys.argv) != 2: #//TODO que significa sys
+    if len(sys.argv) != 2:
         print(f"Uso: {sys.argv[0]} <archivo_caso.txt>")
         sys.exit(1)
 
